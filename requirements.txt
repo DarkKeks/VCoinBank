@@ -1,0 +1,4 @@
+vk_api
+apscheduler
+requests
+psycopg2-binary
