@@ -2,16 +2,18 @@ import hashlib
 import json
 import os
 import re
-from datetime import datetime
-
 import psycopg2
 import requests
-from apscheduler.schedulers.background import BackgroundScheduler
-from requests import RequestException
+
+from datetime import datetime
+
 from vk_api import vk_api
-from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
-from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 from vk_api.utils import get_random_id
+from vk_api.keyboard import VkKeyboard, VkKeyboardColor
+from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
+
+from requests import RequestException
+from apscheduler.schedulers.background import BackgroundScheduler
 
 merchant_url = 'https://www.digiseller.market/asp2/pay_wm.asp?id_d=2629111&lang=ru-RU'
 
@@ -65,14 +67,14 @@ class Messages:
 
 
 class BotManager:
-
     def __init__(self):
         self.status = {'status': 'error', 'message': 'not requested yet'}
 
-    def transfer(self, id, amount):
+    @staticmethod
+    def transfer(vk_id, amount):
         try:
             return requests.get(bot_transfer_endpoint.format(
-                to=id,
+                to=vk_id,
                 amount=int(amount * 1e6)
             )).json()
         except RequestException:
@@ -86,7 +88,7 @@ class BotManager:
         except RequestException:
             response = None
 
-        if response is not None and response.status_code == requests.codes.ok:
+        if response and response.status_code == requests.codes.ok:
             self.status = {
                 'status': 'success',
                 'data': response.json(),
@@ -96,7 +98,7 @@ class BotManager:
             last_available = bot_manager.status.get('last_available')
             self.status = {
                 'status': 'error',
-                'message': response.status_code if response is not None else -1,
+                'message': response.status_code if response else -1,
             }
             if last_available:
                 self.status['last_available'] = last_available
@@ -130,7 +132,8 @@ class CodeManager:
         cursor.execute("DELETE FROM used_codes WHERE code = %s", (code,))
         self.connection.commit()
 
-    def check_merchant(self, code):
+    @staticmethod
+    def check_merchant(code):
         sign = hashlib.md5()
         string = f"{CodeManager.SELLER_ID}:{code}:{CodeManager.PASSWORD}"
         sign.update(string.encode('utf-8'))
@@ -172,28 +175,31 @@ class Bot:
 
         self.main_keyboard = VkKeyboard(one_time=False)
 
-        self.main_keyboard.add_button('Покупка', color=VkKeyboardColor.POSITIVE)
+        def add_button(text, color=VkKeyboardColor.DEFAULT, payload=''):
+            self.main_keyboard.add_button(text, color=color, payload=payload)
+
+        add_button('Покупка', color=VkKeyboardColor.POSITIVE)
         self.main_keyboard.add_line()
-        self.main_keyboard.add_button('Курс', color=VkKeyboardColor.DEFAULT)
-        self.main_keyboard.add_button('Статус', color=VkKeyboardColor.DEFAULT)
+        add_button('Курс', color=VkKeyboardColor.DEFAULT)
+        add_button('Статус', color=VkKeyboardColor.DEFAULT)
         self.main_keyboard.add_line()
-        self.main_keyboard.add_button('Бонусы', color=VkKeyboardColor.PRIMARY)
+        add_button('Бонусы', color=VkKeyboardColor.PRIMARY)
 
     def start(self):
         for event in self.bot.listen():
             if event.type == VkBotEventType.MESSAGE_NEW:
                 id = event.object.from_id
                 if 'text' in event.object:
-                    message = event.object.text.strip()
-                    if message == 'Начать':
+                    message = event.object.text.strip().lower()
+                    if message == 'начать':
                         self.send_message(id, Messages.Intro + Messages.Commands)
-                    elif message == 'Покупка':
+                    elif message == 'покупка':
                         self.send_message(id, Messages.BuyGuide)
-                    elif message == 'Курс':
+                    elif message == 'курс':
                         self.send_message(id, Messages.Rate)
-                    elif message == 'Бонусы':
+                    elif message == 'бонусы':
                         self.send_message(id, Messages.Bonus)
-                    elif message == 'Статус':
+                    elif message == 'статус':
                         if bot_manager.status['status'] == 'error':
                             self.send_message(id, Messages.NotAvailable)
                         else:
@@ -216,7 +222,8 @@ class Bot:
             message=message
         )
 
-    def is_code(self, message):
+    @staticmethod
+    def is_code(message):
         return re.match(r'[a-zA-Z0-9]{16}', message) is not None
 
     def process_code(self, id, code):
