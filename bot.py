@@ -43,6 +43,9 @@ class Messages:
 """
 
     BuyGuide = """Инструкция по покупке VK Coin у бота: vk.cc/9giWdY"""
+    Buy = """Оформление заказа и оплата: vk.cc/9gj1GK
+    
+После оплаты отправьте сюда уникальный код, выданный Вам после оплаты!"""
 
     Rate = """Текущий курс (бот только продает коины, не покупает): 
     
@@ -178,12 +181,13 @@ class Bot:
         def add_button(text, color=VkKeyboardColor.DEFAULT, payload=''):
             self.main_keyboard.add_button(text, color=color, payload=payload)
 
-        add_button('Покупка', color=VkKeyboardColor.POSITIVE)
+        add_button('Купить', color=VkKeyboardColor.POSITIVE)
+        add_button('Инструкция')
         self.main_keyboard.add_line()
-        add_button('Курс', color=VkKeyboardColor.DEFAULT)
-        add_button('Статус', color=VkKeyboardColor.DEFAULT)
+        add_button('Цены', color=VkKeyboardColor.DEFAULT)
+        # add_button('Статус', color=VkKeyboardColor.DEFAULT)
         self.main_keyboard.add_line()
-        add_button('Бонусы', color=VkKeyboardColor.PRIMARY)
+        add_button('Получить VK Coins бесплатно!', color=VkKeyboardColor.NEGATIVE)
 
     def start(self):
         for event in self.bot.listen():
@@ -193,18 +197,20 @@ class Bot:
                     message = event.object.text.strip().lower()
                     if message == 'начать':
                         self.send_message(id, Messages.Intro + Messages.Commands)
-                    elif message == 'покупка':
+                    elif message == 'купить':
+                        self.send_message(id, Messages.Buy)
+                    elif message == 'инструкция':
                         self.send_message(id, Messages.BuyGuide)
-                    elif message == 'курс':
+                    elif message == 'цены':
                         self.send_message(id, Messages.Rate)
-                    elif message == 'бонусы':
+                    elif message == 'Получить VK Coins бесплатно!'.lower():
                         self.send_message(id, Messages.Bonus)
-                    elif message == 'статус':
-                        if bot_manager.status['status'] == 'error':
-                            self.send_message(id, Messages.NotAvailable)
-                        else:
-                            status = bot_manager.status
-                            self.send_message(id, Messages.Available.format(status['data']['score'] / 1e3))
+                    # elif message == 'статус':
+                    #     if bot_manager.status['status'] == 'error':
+                    #         self.send_message(id, Messages.NotAvailable)
+                    #     else:
+                    #         status = bot_manager.status
+                    #         self.send_message(id, Messages.Available.format(status['data']['score'] / 1e3))
                     else:
                         if self.is_code(message):
                             self.send_message(id, 'Обрабатываем код')
