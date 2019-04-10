@@ -65,7 +65,9 @@ class Messages:
 
     InvalidCode = """Неверный код."""
 
-    TransferSuccess = """Коины успешно перечислены! Спасибо за покупку"""
+    TransferSuccess = """{count} коинов успешно перечислено! Спасибо за покупку
+
+Отзыв о покупке можно оставить здесь: vk.cc/9gFQYk"""
 
     TransferFailed = """Перевод не удался, попробуйте позже :("""
 
@@ -246,7 +248,8 @@ class Bot:
 
                 result = self.bot_manager.transfer(id, purchase_info['count'])
                 if result['success']:
-                    self.send_message(id, Messages.TransferSuccess)
+                    formatted_count = self.format_coin_count(purchase_info['count'])
+                    self.send_message(id, Messages.TransferSuccess.format(count=formatted_count))
                 else:
                     self.code_manager.delete_used(code)
                     self.send_message(id, Messages.TransferFailed)
@@ -254,6 +257,10 @@ class Bot:
                 self.send_message(id, Messages.InvalidCode)
         else:
             self.send_message(id, Messages.UsedAlready)
+
+    @staticmethod
+    def format_coin_count(count):
+        return int(count * 1e6) / 1e3
 
 
 bot_manager = BotManager()
