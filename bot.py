@@ -17,6 +17,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 merchant_url = 'https://www.digiseller.market/asp2/pay_wm.asp?id_d=2629111&lang=ru-RU'
 
+group_id = os.environ.get('GROUP_ID')
 group_token = os.environ.get('GROUP_TOKEN')
 bot_token = os.environ.get('BOT_TOKEN')
 merchant_password = os.environ.get('MERCHANT_PASSWORD')
@@ -173,7 +174,7 @@ class Bot:
         self.bot_manager = bot_manager
         self.code_manager = code_manager
         self.session = vk_api.VkApi(token=group_token)
-        self.bot = VkBotLongPoll(self.session, 180860084)
+        self.bot = VkBotLongPoll(self.session, group_id)
         self.api = self.session.get_api()
 
         self.main_keyboard = VkKeyboard(one_time=False)
@@ -185,7 +186,6 @@ class Bot:
         add_button('Инструкция')
         self.main_keyboard.add_line()
         add_button('Цены', color=VkKeyboardColor.DEFAULT)
-        # add_button('Статус', color=VkKeyboardColor.DEFAULT)
         self.main_keyboard.add_line()
         add_button('Получить VK Coins бесплатно!', color=VkKeyboardColor.NEGATIVE)
 
@@ -193,7 +193,10 @@ class Bot:
         for event in self.bot.listen():
             if event.type == VkBotEventType.MESSAGE_NEW:
                 id = event.object.from_id
-                if 'text' in event.object:
+
+                if self.has_market_attachment(event.object):
+                    self.send_message(id, Messages.Buy)
+                elif 'text' in event.object:
                     message = event.object.text.strip().lower()
                     if message == 'начать':
                         self.send_message(id, Messages.Intro + Messages.Commands)
@@ -205,12 +208,6 @@ class Bot:
                         self.send_message(id, Messages.Rate)
                     elif message == 'Получить VK Coins бесплатно!'.lower():
                         self.send_message(id, Messages.Bonus)
-                    # elif message == 'статус':
-                    #     if bot_manager.status['status'] == 'error':
-                    #         self.send_message(id, Messages.NotAvailable)
-                    #     else:
-                    #         status = bot_manager.status
-                    #         self.send_message(id, Messages.Available.format(status['data']['score'] / 1e3))
                     else:
                         if self.is_code(message):
                             self.send_message(id, 'Обрабатываем код')
@@ -227,6 +224,14 @@ class Bot:
             keyboard=self.main_keyboard.get_keyboard(),
             message=message
         )
+
+    @staticmethod
+    def has_market_attachment(message):
+        if 'attachments' in message:
+            for item in message['attachments']:
+                if item['type'] == 'market':
+                    return True
+        return False
 
     @staticmethod
     def is_code(message):
