@@ -29,10 +29,7 @@ bot_transfer_endpoint = f'{bot_base_endpoint}/transfer?to={{to}}&amount={{amount
 
 class Messages:
 
-    Commands = """ВКонтакте изменили приложение, поэтому мы пока что не можем сделать выплату коинов. Утром все выплаты будут выполнены. Просим прощение за предоставленные неудобства.
-    
-    
-Список команд, которые можно использовать: 
+    Commands = """Список команд, которые можно использовать: 
 
 Покупка - получить инструкции по покупке VK Coin
 
@@ -243,8 +240,6 @@ class Bot:
         return re.match(r'[a-zA-Z0-9]{16}', message) is not None
 
     def process_code(self, id, code):
-        self.send_message(id, "ВКонтакте изменили приложение, поэтому мы пока что не можем сделать выплату коинов. Утром все выплаты будут выполнены. Просим прощение за предоставленные неудобства.")
-        return;
         if self.code_manager.check_not_used(code):
             purchase_info = self.code_manager.check_merchant(code)
             if purchase_info['valid']:
