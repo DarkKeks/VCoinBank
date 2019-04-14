@@ -273,11 +273,5 @@ bot = Bot(code_manager, bot_manager)
 scheduler = BackgroundScheduler(daemon=True)
 scheduler.start()
 
-
-@scheduler.scheduled_job(trigger='interval', seconds=5)
-def update_status():
-    bot_manager.update_status()
-
-
 if __name__ == '__main__':
     bot.start()
