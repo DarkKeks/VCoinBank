@@ -1,19 +1,30 @@
 import hashlib
 import json
+import logging
 import os
 import re
+from enum import Enum
+
 import psycopg2
 import requests
-
-from datetime import datetime
-
-from vk_api import vk_api
-from vk_api.utils import get_random_id
-from vk_api.keyboard import VkKeyboard, VkKeyboardColor
-from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
-
 from requests import RequestException
-from apscheduler.schedulers.background import BackgroundScheduler
+from vk_api import vk_api
+from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
+from vk_api.keyboard import VkKeyboard, VkKeyboardColor
+from vk_api.utils import get_random_id
+
+logFormatter = logging.Formatter(
+    '%(levelname)-5s [%(asctime)s] %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger('VCoinGame')
+
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logFormatter)
+
+logger.addHandler(console_handler)
+logger.setLevel(logging.INFO)
+
 
 merchant_url = 'https://www.digiseller.market/asp2/pay_wm.asp?id_d=2629111&lang=ru-RU'
 
@@ -22,9 +33,8 @@ group_token = os.environ.get('GROUP_TOKEN')
 bot_token = os.environ.get('BOT_TOKEN')
 merchant_password = os.environ.get('MERCHANT_PASSWORD')
 
-bot_base_endpoint = f'http://y1.codepaste.ml:8080/{bot_token}'
-bot_status_endpoint = f'{bot_base_endpoint}/status'
-bot_transfer_endpoint = f'{bot_base_endpoint}/transfer?to={{to}}&amount={{amount}}'
+merchant_id = os.environ.get('MERCHANT_ID')
+merchant_key = os.environ.get('MERCHANT_KEY')
 
 
 class Messages:
@@ -75,42 +85,44 @@ class Messages:
 Напишите сообщение "#проблема" (без кавычек), чтобы мы смогли помочь Вам."""
 
 
-class BotManager:
-    def __init__(self):
-        self.status = {'status': 'error', 'message': 'not requested yet'}
+class CoinAPI:
+    class Method(Enum):
+        GET_TRANSACTIONS = 'tx'
+        SEND = 'send'
+
+    api_url = 'https://coin-without-bugs.vkforms.ru/merchant/{}/'
+    headers = {'Content-Type': 'application/json'}
+
+    def __init__(self, merchant_id, key):
+        self.merchant_id = merchant_id
+        self.key = key
+
+        self.params = {
+            'merchantId': self.merchant_id,
+            'key': self.key
+        }
+
+    def send(self, to_id, amount):
+        method_url = CoinAPI.api_url.format(CoinAPI.Method.SEND.value)
+
+        params = self.params.copy()
+        params.update({'toId': to_id})
+        params.update({'amount': amount})
+
+        return CoinAPI._send_request(method_url, json.dumps(params))
 
     @staticmethod
-    def transfer(vk_id, amount):
+    def _send_request(url, params):
         try:
-            return requests.get(bot_transfer_endpoint.format(
-                to=vk_id,
-                amount=int(amount * 1e6)
-            )).json()
-        except RequestException:
-            return {
-                'success': False
-            }
+            response = requests.post(url, headers=CoinAPI.headers, data=params)
 
-    def update_status(self):
-        try:
-            response = requests.get(bot_status_endpoint, timeout=2)
-        except RequestException:
-            response = None
+            if response.status_code == 200:
+                return response.json().get('response')
 
-        if response and response.status_code == requests.codes.ok:
-            self.status = {
-                'status': 'success',
-                'data': response.json(),
-                'last_available': datetime.now()
-            }
-        else:
-            last_available = bot_manager.status.get('last_available')
-            self.status = {
-                'status': 'error',
-                'message': response.status_code if response else -1,
-            }
-            if last_available:
-                self.status['last_available'] = last_available
+            raise RequestException()
+        except RequestException as e:
+            logger.error(e)
+        return None
 
 
 class CodeManager:
@@ -175,8 +187,8 @@ class CodeManager:
 
 
 class Bot:
-    def __init__(self, code_manager, bot_manager):
-        self.bot_manager = bot_manager
+    def __init__(self, code_manager, coin_api):
+        self.coin_api = coin_api
         self.code_manager = code_manager
         self.session = vk_api.VkApi(token=group_token)
         self.bot = VkBotLongPoll(self.session, group_id)
@@ -249,13 +261,15 @@ class Bot:
                 self.code_manager.save(purchase_info, code)
                 self.code_manager.set_used(id, code)
 
-                result = self.bot_manager.transfer(id, purchase_info['count'])
-                if result['success']:
-                    formatted_count = self.format_coin_count(purchase_info['count'])
-                    self.send_message(id, Messages.TransferSuccess.format(count=formatted_count))
-                else:
+                result = self.coin_api.send(id, int(purchase_info['count'] * 1e6))
+
+                if not result:
                     self.code_manager.delete_used(code)
                     self.send_message(id, Messages.TransferFailed)
+                else:
+                    formatted_count = self.format_coin_count(purchase_info['count'])
+                    self.send_message(id, Messages.TransferSuccess.format(count=formatted_count))
+
             else:
                 self.send_message(id, Messages.InvalidCode)
         else:
@@ -266,12 +280,9 @@ class Bot:
         return int(count * 1e6) / 1e3
 
 
-bot_manager = BotManager()
-code_manager = CodeManager()
-bot = Bot(code_manager, bot_manager)
-
-scheduler = BackgroundScheduler(daemon=True)
-scheduler.start()
-
 if __name__ == '__main__':
+    coin_api = CoinAPI(merchant_id, merchant_key)
+    code_manager = CodeManager()
+    bot = Bot(code_manager, coin_api)
+
     bot.start()
