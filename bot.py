@@ -25,8 +25,7 @@ console_handler.setFormatter(logFormatter)
 logger.addHandler(console_handler)
 logger.setLevel(logging.INFO)
 
-
-merchant_url = 'https://www.digiseller.market/asp2/pay_wm.asp?id_d=2629111&lang=ru-RU'
+merchant_url = 'https://www.digiseller.market/asp2/pay_wm.asp?id_d=2629111&lang=ru-RU&referrer=bank&vk_id={id}'
 
 group_id = os.environ.get('GROUP_ID')
 group_token = os.environ.get('GROUP_TOKEN')
@@ -38,7 +37,6 @@ merchant_key = os.environ.get('MERCHANT_KEY')
 
 
 class Messages:
-
     Commands = """Вы можете использовать следующие команды: 
 
 💰 Купить - купить VK Coin
@@ -53,8 +51,8 @@ class Messages:
 
 """
 
-    BuyGuide = """📝 Инструкция по покупке VK Coin у бота: vk.cc/9giWdY"""
-    Buy = """💰 Оформление заказа и оплата: vk.cc/9gj1GK
+    BuyGuide = """📝 Инструкция по покупке VK Coin у бота: https://vk.cc/9giWdY"""
+    Buy = """💰 Оформление заказа и оплата: {url}
     
 Отзывы покупателей: https://vk.cc/9gFQYk    
     
@@ -70,8 +68,6 @@ class Messages:
     NotAvailable = """😭 Пока что бот недоступен, но это скоро исправится! Попробуй немного позже! 😭"""
 
     Available = """Бот доступен, баланс бота - {}"""
-
-    Bonus = """Инструкция о том, как получить VK Coin бесплатно: vk.cc/9giVX9"""
 
     UsedAlready = """Код уже был использован."""
 
@@ -137,20 +133,25 @@ class CodeManager:
 
     def check_not_used(self, code):
         cursor = self.connection.cursor()
-        cursor.execute("SELECT COUNT(*) FROM used_codes WHERE code = %s", (code,))
-        result = cursor.fetchone()[0] == 0
+        cursor.execute("SELECT transfered FROM used_codes WHERE code = %s", (code,))
+        row = cursor.fetchone()
+        result = row is None or row[0] is False
         cursor.close()
         return result
 
     def set_used(self, id, code):
         cursor = self.connection.cursor()
-        cursor.execute("INSERT INTO used_codes (code, user_id) VALUES (%s, %s)", (code, id))
+        cursor.execute("INSERT INTO used_codes (code, user_id, referrer) VALUES (%s, %s, 'bank')"
+                       "ON CONFLICT (code) DO UPDATE SET "
+                       "user_id=excluded.user_id, "
+                       "referrer=excluded.referrer, "
+                       "time=now()", (code, id))
         self.connection.commit()
         cursor.close()
 
-    def delete_used(self, code):
+    def mark_success(self, code):
         cursor = self.connection.cursor()
-        cursor.execute("DELETE FROM used_codes WHERE code = %s", (code,))
+        cursor.execute("UPDATE used_codes SET transfered = True WHERE code = %s", (code,))
         self.connection.commit()
 
     @staticmethod
@@ -203,8 +204,6 @@ class Bot:
         add_button('Инструкция')
         self.main_keyboard.add_line()
         add_button('Цены', color=VkKeyboardColor.DEFAULT)
-        self.main_keyboard.add_line()
-        add_button('Получить VK Coins бесплатно!', color=VkKeyboardColor.NEGATIVE)
 
     def start(self):
         for event in self.bot.listen():
@@ -218,13 +217,11 @@ class Bot:
                     if message == 'начать':
                         self.send_message(id, Messages.Intro + Messages.Commands)
                     elif message == 'купить':
-                        self.send_message(id, Messages.Buy)
+                        self.send_message(id, Messages.Buy.format(url=self.get_url(id)))
                     elif message == 'инструкция':
                         self.send_message(id, Messages.BuyGuide)
                     elif message == 'цены':
                         self.send_message(id, Messages.Rate)
-                    elif message == 'Получить VK Coins бесплатно!'.lower():
-                        self.send_message(id, Messages.Bonus)
                     else:
                         if self.is_code(message):
                             self.send_message(id, 'Обрабатываем код')
@@ -241,6 +238,10 @@ class Bot:
             keyboard=self.main_keyboard.get_keyboard(),
             message=message
         )
+
+    @staticmethod
+    def get_url(id):
+        return merchant_url.format(id=id)
 
     @staticmethod
     def has_market_attachment(message):
@@ -264,9 +265,9 @@ class Bot:
                 result = self.coin_api.send(id, int(purchase_info['count'] * 1e6))
 
                 if not result:
-                    self.code_manager.delete_used(code)
                     self.send_message(id, Messages.TransferFailed)
                 else:
+                    self.code_manager.mark_success(code)
                     formatted_count = self.format_coin_count(purchase_info['count'])
                     self.send_message(id, Messages.TransferSuccess.format(count=formatted_count))
 
