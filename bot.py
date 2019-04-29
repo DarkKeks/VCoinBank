@@ -205,7 +205,7 @@ class Bot:
                 id = event.object.from_id
 
                 if self.has_market_attachment(event.object):
-                    self.send_message(id, Messages.Buy)
+                    self.send_message(id, Messages.Buy.format(self.get_url(id)))
                 elif 'text' in event.object:
                     message = event.object.text.strip().lower()
                     if message == 'начать':
