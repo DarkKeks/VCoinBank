@@ -139,13 +139,16 @@ class CodeManager:
         cursor.close()
         return result
 
-    def set_used(self, id, code):
+    def set_used(self, id, code, merchant_info, coins):
         cursor = self.connection.cursor()
-        cursor.execute("INSERT INTO used_codes (code, user_id, referrer) VALUES (%s, %s, 'bank')"
+        cursor.execute("INSERT INTO used_codes (code, user_id, referrer, merchant_info, coins) "
+                       "VALUES (%s, %s, 'bank', %s::jsonb, %s) "
                        "ON CONFLICT (code) DO UPDATE SET "
                        "user_id=excluded.user_id, "
                        "referrer=excluded.referrer, "
-                       "time=now()", (code, id))
+                       "time=now(), "
+                       "merchant_info=excluded.merchant_info, "
+                       "coins=excluded.coins", (code, id, json.dumps(merchant_info), coins))
         self.connection.commit()
         cursor.close()
 
@@ -170,21 +173,12 @@ class CodeManager:
             return {
                 'valid': True,
                 'count': float(response['cnt_goods'].replace(',', '.')),
-                'reponse': response
+                'response': response
             }
         else:
             return {
                 'valid': False
             }
-
-    def save(self, info, code):
-        cursor = self.connection.cursor()
-        cursor.execute("INSERT INTO merchant_info (data, code) SELECT %s, %s "
-                       "WHERE NOT EXISTS ( "
-                       "    SELECT id FROM merchant_info WHERE code = %s"
-                       ")", (json.dumps(info), code, code))
-        self.connection.commit()
-        cursor.close()
 
 
 class Bot:
@@ -259,10 +253,11 @@ class Bot:
         if self.code_manager.check_not_used(code):
             purchase_info = self.code_manager.check_merchant(code)
             if purchase_info['valid']:
-                self.code_manager.save(purchase_info, code)
-                self.code_manager.set_used(id, code)
+                amount = int(purchase_info['count'] * 1e6)
 
-                result = self.coin_api.send(id, int(purchase_info['count'] * 1e6))
+                self.code_manager.set_used(id, code, purchase_info['response'], amount)
+
+                result = self.coin_api.send(id, amount)
 
                 if not result:
                     self.send_message(id, Messages.TransferFailed)
